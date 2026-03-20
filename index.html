@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Differential Expression Visualizer and More</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
@@ -787,11 +788,15 @@
       <div class="section-title">Data Input</div>
       <div class="section-body">
         <div class="upload-zone" id="uploadZone">
-          <input type="file" id="fileInput" accept=".csv,.tsv,.txt" />
+          <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.xlsx,.xls" />
           <span class="upload-icon">📂</span>
-          <p>Click or drag &amp; drop<br>CSV / TSV file</p>
+          <p>Click or drag &amp; drop<br>CSV / TSV / Excel file</p>
           <div class="file-name" id="fileName"></div>
         </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--sb-text-dim);margin:4px 0;">
+          <input type="checkbox" id="commaDecimal" />
+          Use comma as decimal separator (e.g. 1,5 → 1.5)
+        </label>
         <button class="btn" id="plotBtn">Plot Volcano</button>
         <div id="statusMsg" style="display:none"></div>
       </div>
@@ -994,7 +999,7 @@
       <div class="section-title">Upload Results</div>
       <div class="section-body">
         <div class="upload-zone" id="uploadResultsZone">
-          <input type="file" id="resultsFileInput" accept=".csv,.tsv,.txt" />
+          <input type="file" id="resultsFileInput" accept=".csv,.tsv,.txt,.xlsx,.xls" />
           <span class="upload-icon">📂</span>
           <p>Upload enrichment results CSV</p>
           <div class="file-name" id="resultsFileName"></div>
@@ -1107,7 +1112,7 @@
       <div class="section-title">Upload GSEA Results</div>
       <div class="section-body">
         <div class="upload-zone" id="uploadGseaZone">
-          <input type="file" id="gseaFileInput" accept=".csv,.tsv,.txt" />
+          <input type="file" id="gseaFileInput" accept=".csv,.tsv,.txt,.xlsx,.xls" />
           <span class="upload-icon">📂</span>
           <p>Upload fgsea output CSV</p>
           <div class="file-name" id="gseaFileName"></div>
@@ -1758,16 +1763,25 @@ resultsFileInput.addEventListener('change', e => {
 
 function handleResultsFile(file) {
   resultsFileName.textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      enrichmentRawData = parseDelimited(e.target.result);
-      showStatus(`Loaded ${enrichmentRawData.length} enrichment results`, 'success');
-    } catch(err) {
-      alert('Parse error: ' + err.message);
-    }
-  };
-  reader.readAsText(file);
+  if (isExcelFile(file.name)) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        enrichmentRawData = parseExcel(new Uint8Array(e.target.result));
+        showStatus(`Loaded ${enrichmentRawData.length} enrichment results`, 'success');
+      } catch(err) { alert('Parse error: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        enrichmentRawData = parseDelimited(e.target.result);
+        showStatus(`Loaded ${enrichmentRawData.length} enrichment results`, 'success');
+      } catch(err) { alert('Parse error: ' + err.message); }
+    };
+    reader.readAsText(file);
+  }
 }
 
 // Raw uploaded rows — stored separately to allow re-parse on each click
@@ -1839,16 +1853,25 @@ gseaFileInput.addEventListener('change', e => {
 
 function handleGseaFile(file) {
   gseaFileName.textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      gseaRawData = parseDelimited(e.target.result);
-      showStatus(`Loaded ${gseaRawData.length} GSEA results`, 'success');
-    } catch(err) {
-      alert('Parse error: ' + err.message);
-    }
-  };
-  reader.readAsText(file);
+  if (isExcelFile(file.name)) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        gseaRawData = parseExcel(new Uint8Array(e.target.result));
+        showStatus(`Loaded ${gseaRawData.length} GSEA results`, 'success');
+      } catch(err) { alert('Parse error: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        gseaRawData = parseDelimited(e.target.result);
+        showStatus(`Loaded ${gseaRawData.length} GSEA results`, 'success');
+      } catch(err) { alert('Parse error: ' + err.message); }
+    };
+    reader.readAsText(file);
+  }
 }
 
 plotGseaBtn.addEventListener('click', () => {
@@ -2476,18 +2499,41 @@ fileInput.addEventListener('change', e => {
   if (e.target.files[0]) handleFile(e.target.files[0]);
 });
 
+function isExcelFile(name) {
+  return /\.xlsx?$/i.test(name);
+}
+
+function parseExcel(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: '' });
+}
+
 function handleFile(file) {
   fileNameEl.textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      rawData = parseDelimited(e.target.result);
-      showStatus(`Loaded ${rawData.length} rows · ${Object.keys(rawData[0]).length} columns`, 'success');
-    } catch(err) {
-      showStatus('Parse error: ' + err.message, 'error');
-    }
-  };
-  reader.readAsText(file);
+  if (isExcelFile(file.name)) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        rawData = parseExcel(new Uint8Array(e.target.result));
+        showStatus(`Loaded ${rawData.length} rows · ${Object.keys(rawData[0]).length} columns`, 'success');
+      } catch(err) {
+        showStatus('Parse error: ' + err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        rawData = parseDelimited(e.target.result);
+        showStatus(`Loaded ${rawData.length} rows · ${Object.keys(rawData[0]).length} columns`, 'success');
+      } catch(err) {
+        showStatus('Parse error: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  }
 }
 
 function parseDelimited(text) {
@@ -2495,7 +2541,7 @@ function parseDelimited(text) {
   if (lines.length < 2) throw new Error('File too short');
   // detect delimiter
   const firstLine = lines[0];
-  const delim = firstLine.includes('\t') ? '\t' : ',';
+  const delim = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ',';
   const headers = firstLine.split(delim).map(h => h.trim().replace(/^"|"$/g, ''));
   return lines.slice(1).filter(l => l.trim()).map(line => {
     const vals = line.split(delim).map(v => v.trim().replace(/^"|"$/g, ''));
@@ -2503,6 +2549,15 @@ function parseDelimited(text) {
     headers.forEach((h, i) => row[h] = vals[i] ?? '');
     return row;
   });
+}
+
+function parseNum(val) {
+  if (val == null) return NaN;
+  let s = String(val).trim();
+  if (document.getElementById('commaDecimal').checked) {
+    s = s.replace(/,/g, '.');
+  }
+  return parseFloat(s);
 }
 
 /* ================================================================
@@ -2518,8 +2573,8 @@ plotBtn.addEventListener('click', () => {
   if (!rawData.length) { showStatus('No data loaded. Please upload a file first.', 'error'); return; }
 
   plotData = rawData.map(row => ({
-    fc:    parseFloat(row[state.colFC]),
-    pv:    parseFloat(row[state.colPV]),
+    fc:    parseNum(row[state.colFC]),
+    pv:    parseNum(row[state.colPV]),
     label: row[state.colLabel] ?? '',
     gene:  row[state.colGene]  ?? '',
     raw:   row,
