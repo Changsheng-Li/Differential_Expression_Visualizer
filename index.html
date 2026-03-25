@@ -773,7 +773,7 @@
   <div class="logo">DE</div>
   <div>
     <h1>Differential Expression Visualizer and More</h1>
-    <span>Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
+    <span>v1.0.2 · Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
   </div>
 </header>
 
@@ -808,19 +808,19 @@
       <div class="section-body">
         <label>
           Log Fold Change column
-          <input type="text" id="colFC" value="logFC" placeholder="e.g. log2FoldChange" />
+          <select id="colFC"><option value="logFC">logFC</option></select>
         </label>
         <label>
           P-value column
-          <input type="text" id="colPV" value="P.Value" placeholder="e.g. pvalue" />
+          <select id="colPV"><option value="P.Value">P.Value</option></select>
         </label>
         <label>
           Gene / Label column (optional)
-          <input type="text" id="colLabel" value="gene" placeholder="e.g. symbol, gene_id" />
+          <select id="colLabel"><option value="">— none —</option><option value="gene">gene</option></select>
         </label>
         <label>
           Gene name column (tooltip)
-          <input type="text" id="colGene" value="Gene" placeholder="e.g. Gene, gene_name" />
+          <select id="colGene"><option value="">— none —</option><option value="Gene">Gene</option></select>
         </label>
         <label>
           Highlight genes (one per line)
@@ -1134,6 +1134,7 @@
         <a href="#manual-network" class="manual-toc-link">3. Network Analysis</a>
         <a href="#manual-gsea" class="manual-toc-link">4. GSEA</a>
         <a href="#manual-tips" class="manual-toc-link">Tips &amp; Tricks</a>
+        <a href="#manual-changelog" class="manual-toc-link">Changelog</a>
       </div>
     </div>
   </div>
@@ -1529,6 +1530,14 @@
         <li><strong>Everything is exportable</strong> &mdash; every tab has PNG and CSV downloads.</li>
         <li><strong>All plots are interactive</strong> &mdash; hover for tooltips, and the network supports drag &amp; zoom too.</li>
         <li>This page is still under construction by <a href="mailto:c.li-2@umcutrecht.nl" style="color:var(--accent);text-decoration:underline;">Changsheng Li @ UMC Utrecht</a>. SO there might be bugs. Let me know if you encounter any!</li>
+      </ul>
+
+      <!-- ── CHANGELOG ── -->
+      <h3 id="manual-changelog">Changelog</h3>
+      <ul>
+        <li><strong>v1.0.2</strong> (2026-03-25) &mdash; Column mapping now uses dropdown menus populated from the uploaded file, with first-value previews and auto-detection of common column names.</li>
+        <li><strong>v1.0.1</strong> (2026-03-20) &mdash; Added Excel (.xlsx/.xls) file support and comma-as-decimal-separator option for European locale data.</li>
+        <li><strong>v1.0.0</strong> (2026-03-20) &mdash; Initial release with Volcano Plot, Enrichment Analysis (g:Profiler), Network Analysis (STRING), and GSEA tabs.</li>
       </ul>
 
     </div>
@@ -2509,6 +2518,56 @@ function parseExcel(arrayBuffer) {
   return XLSX.utils.sheet_to_json(ws, { defval: '' });
 }
 
+function populateColumnDropdowns(rows) {
+  if (!rows.length) return;
+  const cols = Object.keys(rows[0]);
+  const first = rows[0];
+
+  const fcHints  = ['logfc','log2foldchange','log2fc','fc','foldchange','lfc'];
+  const pvHints  = ['p.value','pvalue','pval','p_value','padj','fdr','adj.p.val','p.val'];
+  const lblHints = ['gene','symbol','gene_id','geneid','id','name','gene_symbol','probe','probeid'];
+  const geneHints = ['gene','gene_name','genename','symbol','description','gene_symbol'];
+
+  function bestMatch(hints, cols) {
+    for (const h of hints) {
+      const found = cols.find(c => c.toLowerCase() === h);
+      if (found) return found;
+    }
+    for (const h of hints) {
+      const found = cols.find(c => c.toLowerCase().includes(h));
+      if (found) return found;
+    }
+    return '';
+  }
+
+  function fillSelect(sel, matchedVal, optional) {
+    sel.innerHTML = '';
+    if (optional) {
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = '— none —';
+      sel.appendChild(none);
+    }
+    cols.forEach(col => {
+      const opt = document.createElement('option');
+      opt.value = col;
+      const preview = String(first[col] ?? '').substring(0, 24);
+      opt.textContent = col + (preview ? '  (' + preview + ')' : '');
+      sel.appendChild(opt);
+    });
+    if (matchedVal && cols.includes(matchedVal)) {
+      sel.value = matchedVal;
+    } else if (!optional && cols.length) {
+      sel.value = cols[0];
+    }
+  }
+
+  fillSelect(document.getElementById('colFC'),    bestMatch(fcHints, cols),   false);
+  fillSelect(document.getElementById('colPV'),    bestMatch(pvHints, cols),   false);
+  fillSelect(document.getElementById('colLabel'), bestMatch(lblHints, cols),  true);
+  fillSelect(document.getElementById('colGene'),  bestMatch(geneHints, cols), true);
+}
+
 function handleFile(file) {
   fileNameEl.textContent = file.name;
   if (isExcelFile(file.name)) {
@@ -2516,6 +2575,7 @@ function handleFile(file) {
     reader.onload = e => {
       try {
         rawData = parseExcel(new Uint8Array(e.target.result));
+        populateColumnDropdowns(rawData);
         showStatus(`Loaded ${rawData.length} rows · ${Object.keys(rawData[0]).length} columns`, 'success');
       } catch(err) {
         showStatus('Parse error: ' + err.message, 'error');
@@ -2527,6 +2587,7 @@ function handleFile(file) {
     reader.onload = e => {
       try {
         rawData = parseDelimited(e.target.result);
+        populateColumnDropdowns(rawData);
         showStatus(`Loaded ${rawData.length} rows · ${Object.keys(rawData[0]).length} columns`, 'success');
       } catch(err) {
         showStatus('Parse error: ' + err.message, 'error');
