@@ -773,7 +773,7 @@
   <div class="logo">DE</div>
   <div>
     <h1>Differential Expression Visualizer and More</h1>
-    <span>v1.0.2 · Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
+    <span>v1.0.3 · Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
   </div>
 </header>
 
@@ -843,7 +843,7 @@
           <label for="pvModeProb">Probability</label>
         </div>
         <div class="hint" id="pvModeHint" style="display:none">
-          Posterior probability mode (e.g. BASiCS). Y-axis shows raw probability, reversed. Significant if prob &ge; threshold.
+          Posterior probability mode (e.g. BASiCS). Y-axis shows raw probability (high = significant, at top). Significant if prob &ge; threshold.
         </div>
 
         <!-- Cutoff mode (hidden in prob mode) -->
@@ -988,6 +988,18 @@
             <span class="range-val" id="enrichrMaxTermsVal">20</span>
           </div>
         </label>
+        <label style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;">
+          <input type="checkbox" id="useCustomBg" style="width:auto;flex-shrink:0;" />
+          <span>Use detected proteins as background</span>
+        </label>
+        <div id="customBgPanel" style="display:none;margin-top:6px;">
+          <button class="btn secondary" id="importBgBtn" style="margin-bottom:6px;">Import All Proteins from Volcano</button>
+          <label>
+            Background proteins (one per line)
+            <textarea id="bgGenes" rows="4" placeholder="Paste all detected protein symbols, or use the import button above"></textarea>
+          </label>
+          <div id="bgGeneCount" style="font-size:11px;color:var(--sb-text-dim);font-family:var(--mono);margin-top:2px;"></div>
+        </div>
         <button class="btn" id="runEnrichrBtn">Run Enrichment Analysis</button>
         <div id="enrichrStatus"></div>
         <button class="btn secondary" id="exportEnrichrBtn" style="display:none">&#x2B07; Export Results (CSV)</button>
@@ -1318,7 +1330,7 @@
         <li>Your data as a <strong>TXT, CSV or TSV</strong> file with at least these columns: a <strong>fold-change</strong> column (e.g. logFC), a <strong>p-value or probability from BASiCS MCMC</strong> column, and an <strong>entry name / gene symbol</strong> column.</li>
         <li>You only need a browser to open this tool, but by the time you read this I believe you have already opened it :). Although for the Enrichment, Network tabs you'll need an <strong>internet connection</strong> &mdash; they call public APIs (g:Profiler, STRING) to do their job.</li>
         <li>You don't need a running R-session or python environment. But you do need R if you want to do GSEA later.</li>
-        <li>All changes are real-time. The recommended workflow is: <strong>Volcano Plot first</strong> &rarr; then hop to enrichment analysis tab to import list before going to any other tab. The volcano is where your gene lists come from! And import gene lists step gives list to all other analysis.</li>
+        <li>All changes are real-time. The recommended workflow is: <strong>Volcano Plot first</strong> &rarr; then hop to <strong>Enrichment Analysis</strong> tab to import list before going to any other tab. The volcano is where your gene lists come from! And import gene lists step gives list to all other analysis.</li>
       </ul>
 
       <!-- ── VOLCANO PLOT ── -->
@@ -1535,6 +1547,7 @@
       <!-- ── CHANGELOG ── -->
       <h3 id="manual-changelog">Changelog</h3>
       <ul>
+        <li><strong>v1.0.3</strong> (2026-03-27) &mdash; Enrichment analysis: added custom background option (use detected proteins from experiment instead of full database). Volcano plot: fixed y-axis orientation in probability mode (high probability now at top).</li>
         <li><strong>v1.0.2</strong> (2026-03-25) &mdash; Column mapping now uses dropdown menus populated from the uploaded file, with first-value previews and auto-detection of common column names.</li>
         <li><strong>v1.0.1</strong> (2026-03-20) &mdash; Added Excel (.xlsx/.xls) file support and comma-as-decimal-separator option for European locale data.</li>
         <li><strong>v1.0.0</strong> (2026-03-20) &mdash; Initial release with Volcano Plot, Enrichment Analysis (g:Profiler), Network Analysis (STRING), and GSEA tabs.</li>
@@ -1694,6 +1707,22 @@ const enrichrMaxTermsVal  = document.getElementById('enrichrMaxTermsVal');
    ================================================================ */
 enrichrMaxTerms.addEventListener('input', () => {
   enrichrMaxTermsVal.textContent = enrichrMaxTerms.value;
+});
+
+/* Custom background toggle */
+document.getElementById('useCustomBg').addEventListener('change', function () {
+  document.getElementById('customBgPanel').style.display = this.checked ? 'block' : 'none';
+});
+
+/* Import all detected proteins from volcano as background */
+document.getElementById('importBgBtn').addEventListener('click', () => {
+  if (!plotData.length) {
+    alert('No volcano plot data available. Plot the volcano first.');
+    return;
+  }
+  const allGenes = [...new Set(plotData.map(d => d.label || d.gene).filter(Boolean))];
+  document.getElementById('bgGenes').value = allGenes.join('\n');
+  document.getElementById('bgGeneCount').textContent = `${allGenes.length} proteins loaded as background`;
 });
 
 /* ================================================================
@@ -1984,18 +2013,31 @@ runEnrichrBtn.addEventListener('click', async () => {
   setEnrichrStatus('<span class="spinner"></span>Running g:Profiler query&hellip;', 'info');
   runEnrichrBtn.disabled = true;
 
+  // Build custom background if enabled
+  const useCustomBg = document.getElementById('useCustomBg').checked;
+  const bgGeneList = document.getElementById('bgGenes').value.trim().split('\n').map(g => g.trim()).filter(Boolean);
+  if (useCustomBg && !bgGeneList.length) {
+    setEnrichrStatus('Custom background is enabled but no background proteins are listed. Add proteins or disable custom background.', 'error');
+    return;
+  }
+
   try {
+    const requestBody = {
+      organism: organism,
+      query: queryGenes,
+      sources: selectedDbs,
+      significance_threshold_method: 'fdr',
+      user_threshold: 0.05,
+      no_evidences: false
+    };
+    if (useCustomBg && bgGeneList.length) {
+      requestBody.domain_scope = 'custom';
+      requestBody.background = bgGeneList;
+    }
     const response = await fetch('https://biit.cs.ut.ee/gprofiler/api/gost/profile/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        organism: organism,
-        query: queryGenes,
-        sources: selectedDbs,
-        significance_threshold_method: 'fdr',
-        user_threshold: 0.05,
-        no_evidences: false
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -2727,7 +2769,7 @@ function drawVolcano() {
     const pvVals = plotData.map(d => d.pv);
     const pvMax  = Math.min(d3.max(pvVals) * 1.05, 1);
     yScale_domain = [0, pvMax];
-    yScale_range  = [0, ih]; // reversed: high prob at bottom, low at top
+    yScale_range  = [ih, 0]; // high prob at top (significant), low prob at bottom
   } else {
     const negLogP = plotData.map(d => -Math.log10(d.pv));
     yScale_domain = [0, d3.max(negLogP) * 1.1];
@@ -3159,7 +3201,7 @@ function getNetworkGenes() {
 runNetworkBtn.addEventListener('click', async () => {
   const genes = getNetworkGenes();
   if (!genes.length) {
-    setNetworkStatus('No genes available. Import genes from Volcano first, or enter a custom list.', 'error');
+    setNetworkStatus('No genes available. Go to "Enrichment Analysis" tab and import genes from Volcano first, or enter a custom list.', 'error');
     return;
   }
 
