@@ -773,7 +773,7 @@
   <div class="logo">DE</div>
   <div>
     <h1>Differential Expression Visualizer and More</h1>
-    <span>v1.0.3 · Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
+    <span>v1.0.4 · Still under construction 🚧 by Changsheng Li @ UMC Utrecht</span>
   </div>
 </header>
 
@@ -917,6 +917,36 @@
             <input type="text" id="colorNsHex" value="#3e4458" placeholder="#hex" />
           </div>
         </label>
+      </div>
+    </div>
+
+    <!-- Axis Limits -->
+    <div class="section">
+      <div class="section-title">Axis Limits</div>
+      <div class="section-body">
+        <label style="margin-bottom:2px">X axis (log FC)</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <label style="flex:1;font-size:11px">
+            Min
+            <input type="number" id="axisXMin" placeholder="auto" step="0.5" style="margin-top:2px" />
+          </label>
+          <label style="flex:1;font-size:11px">
+            Max
+            <input type="number" id="axisXMax" placeholder="auto" step="0.5" style="margin-top:2px" />
+          </label>
+        </div>
+        <label style="margin-bottom:2px">Y axis</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <label style="flex:1;font-size:11px">
+            Min
+            <input type="number" id="axisYMin" placeholder="auto" step="0.5" min="0" style="margin-top:2px" />
+          </label>
+          <label style="flex:1;font-size:11px">
+            Max
+            <input type="number" id="axisYMax" placeholder="auto" step="0.5" min="0" style="margin-top:2px" />
+          </label>
+        </div>
+        <button class="btn secondary" id="axisResetBtn" style="width:100%">Reset to Auto</button>
       </div>
     </div>
 
@@ -1382,7 +1412,7 @@
       </div>
 
       <div class="step-row"><div class="step-num">1</div><span>Upload or drop your TXT/CSV/TSV and map your column names (logFC, P-value, Gene label) if they are not exactly the same as the default names. Be aware they are case-sensitive.</span></div>
-      <div class="step-row"><div class="step-num">2</div><span>Play with <strong>FC cutoff</strong>, <strong>p-value cutoff</strong>, and cutoff mode until it feels right.</span></div>
+      <div class="step-row"><div class="step-num">2</div><span>Play with <strong>FC cutoff</strong>, <strong>p-value cutoff</strong>, and cutoff mode until it feels right. The FC slider range and step size auto-adjust to your data after plotting. Use <strong>Axis Limits</strong> to manually fix the X/Y axis range; leave fields blank to keep auto-scaling.</span></div>
       <div class="step-row"><div class="step-num">3</div><span>Hit <strong>Generate Plot</strong>. Hover dots for info, or type gene names in <strong>Highlight Genes</strong> to spotlight them.</span></div>
       <div class="step-row"><div class="step-num">4</div><span>Change colors if you want (defaults are color-blind friendly). Save as PNG when you're happy.</span></div>
       <div class="step-row"><div class="step-num">5</div><span>If you choose to export the table to CSV, there will be an extra column in the table to indicate the regulation direction according to the cutoff you set anew.</span></div>
@@ -1547,6 +1577,7 @@
       <!-- ── CHANGELOG ── -->
       <h3 id="manual-changelog">Changelog</h3>
       <ul>
+        <li><strong>v1.0.4</strong> (2026-04-01) &mdash; Volcano plot: added custom X/Y axis limit controls; FC cutoff slider range, step, and default value now adapt automatically to the uploaded data.</li>
         <li><strong>v1.0.3</strong> (2026-03-27) &mdash; Enrichment analysis: added custom background option (use detected proteins from experiment instead of full database). Volcano plot: fixed y-axis orientation in probability mode (high probability now at top).</li>
         <li><strong>v1.0.2</strong> (2026-03-25) &mdash; Column mapping now uses dropdown menus populated from the uploaded file, with first-value previews and auto-detection of common column names.</li>
         <li><strong>v1.0.1</strong> (2026-03-20) &mdash; Added Excel (.xlsx/.xls) file support and comma-as-decimal-separator option for European locale data.</li>
@@ -2363,18 +2394,38 @@ syncColor(document.getElementById('colorUpPicker'),   document.getElementById('c
 syncColor(document.getElementById('colorDownPicker'), document.getElementById('colorDownHex'), 'colorDown');
 syncColor(document.getElementById('colorNsPicker'),   document.getElementById('colorNsHex'),   'colorNs');
 
+// Axis limit inputs
+['axisXMin','axisXMax','axisYMin','axisYMax'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    if (plotData.length) drawVolcano();
+  });
+});
+document.getElementById('axisResetBtn').addEventListener('click', () => {
+  ['axisXMin','axisXMax','axisYMin','axisYMax'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  if (plotData.length) drawVolcano();
+});
+
 function syncCutoff(slider, numInput, valDisplay, key, fmt) {
+  const sliderDecimals = () => {
+    if (fmt === 'p') return 4;
+    const step = parseFloat(slider.step);
+    if (!isFinite(step) || step <= 0) return 2;
+    return Math.max(1, Math.ceil(-Math.log10(step)));
+  };
   const updateFromSlider = val => {
     state[key] = parseFloat(val);
     slider.value = val;
-    numInput.value = parseFloat(val).toFixed(fmt === 'p' ? 4 : 2);
-    valDisplay.textContent = parseFloat(val).toFixed(fmt === 'p' ? 4 : 2);
+    const dec = sliderDecimals();
+    numInput.value = parseFloat(val).toFixed(dec);
+    valDisplay.textContent = parseFloat(val).toFixed(dec);
     if (plotData.length) updateCutoffs();
   };
   const updateFromInput = val => {
     state[key] = parseFloat(val);
     slider.value = val;
-    valDisplay.textContent = parseFloat(val).toFixed(fmt === 'p' ? 4 : 2);
+    valDisplay.textContent = parseFloat(val).toFixed(sliderDecimals());
     // do NOT overwrite numInput here — user is still typing
     if (plotData.length) updateCutoffs();
   };
@@ -2384,11 +2435,9 @@ function syncCutoff(slider, numInput, valDisplay, key, fmt) {
     if (!isNaN(v) && v >= 0) updateFromInput(v);
   });
   numInput.addEventListener('change', e => {
-    // On blur/Enter, normalize the displayed value in the input
+    // On blur/Enter just ensure it's a valid number; preserve user's typed precision
     const v = parseFloat(e.target.value);
-    if (!isNaN(v) && v >= 0) {
-      numInput.value = v.toFixed(fmt === 'p' ? 4 : 2);
-    }
+    if (!isNaN(v) && v >= 0) numInput.value = String(v);
   });
 }
 syncCutoff(
@@ -2689,6 +2738,25 @@ plotBtn.addEventListener('click', () => {
   }
 
   showStatus(`Plotting ${plotData.length} points\u2026`, 'info');
+
+  // Set FC cutoff controls dynamically from data
+  const maxAbsFC  = Math.max(...plotData.map(d => Math.abs(d.fc)));
+  const fcDefault = parseFloat((maxAbsFC * 0.5).toPrecision(3));
+  const fcMag     = Math.floor(Math.log10(maxAbsFC));
+  const fcStep    = parseFloat(Math.pow(10, fcMag - 1).toPrecision(1));
+  const fcMax     = parseFloat((maxAbsFC * 1.5).toPrecision(4));
+  const fcSliderEl = document.getElementById('fcSlider');
+  const fcInputEl  = document.getElementById('fcInput');
+  fcSliderEl.min   = '0';
+  fcSliderEl.max   = String(fcMax);
+  fcSliderEl.step  = String(fcStep);
+  fcSliderEl.value = String(fcDefault);
+  fcInputEl.min    = '0';
+  fcInputEl.step   = String(fcStep);
+  fcInputEl.value  = String(fcDefault);
+  document.getElementById('fcVal').textContent = fcDefault.toFixed(2);
+  state.fcCutoff = fcDefault;
+
   drawVolcano();
   emptyState.style.display = 'none';
   plotContainer.style.display = 'block';
@@ -2760,8 +2828,12 @@ function drawVolcano() {
   inner.append('rect').attr('width', iw).attr('height', ih).attr('fill', '#f8f9fb');
 
   const xExt = d3.extent(plotData, d => d.fc);
-  const xPad = Math.max(Math.abs(xExt[0]), Math.abs(xExt[1])) * 1.12 + 0.5;
-  xScale = d3.scaleLinear().domain([-xPad, xPad]).range([0, iw]);
+  const xPad = Math.max(Math.abs(xExt[0]), Math.abs(xExt[1])) * 1.5;
+  const customXMin = parseFloat(document.getElementById('axisXMin').value);
+  const customXMax = parseFloat(document.getElementById('axisXMax').value);
+  const xDomainMin = isFinite(customXMin) ? customXMin : -xPad;
+  const xDomainMax = isFinite(customXMax) ? customXMax : xPad;
+  xScale = d3.scaleLinear().domain([xDomainMin, xDomainMax]).range([0, iw]);
 
   const isProb = state.pvMode === 'prob';
   let yScale_domain, yScale_range;
@@ -2775,6 +2847,10 @@ function drawVolcano() {
     yScale_domain = [0, d3.max(negLogP) * 1.1];
     yScale_range  = [ih, 0];
   }
+  const customYMin = parseFloat(document.getElementById('axisYMin').value);
+  const customYMax = parseFloat(document.getElementById('axisYMax').value);
+  if (isFinite(customYMin)) yScale_domain[0] = customYMin;
+  if (isFinite(customYMax)) yScale_domain[1] = customYMax;
   yScale = d3.scaleLinear().domain(yScale_domain).range(yScale_range);
 
   // Grid
